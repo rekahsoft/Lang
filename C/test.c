@@ -21,6 +21,10 @@
  * Date: Jun 27, 2012
  */
 
+int gcd (int a, int b) {
+  return 0;
+}
+  
 int main () {
   return 0;
 }

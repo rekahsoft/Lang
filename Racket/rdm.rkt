@@ -17,6 +17,13 @@
       (factorial-helper n 1)
       (error "Expects argument to be an integer!")))
 
+;; factorial function written using pattern matching
+(define (factorial1 n)
+  (define/match (fac i acc)
+      [(0 _) acc]
+      [(n _) (fac (- n 1) (* n acc))])
+  (fac n 1))
+
 (define factorial!
   (letrec ([fact-helper (lambda (n acc)
 			  (if (<= n 1) acc (fact-helper (- n 1) (* acc n))))]
@@ -146,6 +153,12 @@
           [else (interval-helper (+ i 1) j (cons i acc))]))
   (reverse (interval-helper i j empty)))
 
+(define (repeat f n)
+  (define (rep i acc)
+    (cond [(<= i 0) acc]
+          [else (rep (- i 1) (cons (f) acc))]))
+  (rep n '()))
+
 ;; common poduct interval
 (define (cp-interval i j m)
   (map (lambda (x) (if (= x 0) x (* m x))) (interval i j)))
@@ -247,21 +260,11 @@
   (let ([f (/ n (expt 10 (+ i 1)))])
     (floor (* 10 (- f (floor f))))))
 
-(define (merge xs ys)
-  (cond [(and (empty? xs) (empty? ys)) empty]
-	[(empty? xs) ys]
-	[(empty? ys) xs]
-	[(< (first xs) (first ys)) (cons (first xs) (merge (rest xs) ys))]
-	[(equal? (first xs) (first ys))
-	   (cons (first xs) (cons (first ys) (merge (rest xs) (rest ys))))]
-	[else (cons (first ys) (merge xs (rest ys)))]))
-
-
-(define (merge-sort xs)
-  (cond [(empty? xs) empty]
-	[(empty? (rest xs)) xs]
-	[else (merge (merge-sort (take xs (quotient (length xs) 2)))
-		     (merge-sort (drop xs (quotient (length xs) 2))))]))
+(define (random-list n)
+  (define (randlst i acc)
+    (cond [(<= i 0) acc]
+          [else (randlst (sub1 i) (cons (random n) acc))]))
+  (randlst n '()))
 
 (define (append-all a b)
   (cond [(and (list? a) (list? b)) (append a b)]
@@ -295,3 +298,24 @@
 	     (my-flatten2-h (rest xs) (append (my-flatten2-h (first xs) '()) acc))]
 	  [else (my-flatten2-h (rest xs) (cons (first xs) acc))]))
   (reverse (my-flatten2-h xs '())))
+
+(define (rpn-calc xs)
+  (define (symbol->operator s)
+    (cond [(eq? s '+) +]
+          [(eq? s '-) -]
+          [(eq? s '*) *]
+          [(eq? s '/) /]))
+  (define (symbol-urinary-op? s)
+    (cond [(eq? s '!) #t]
+          [else #f]))
+  (define (symbol-urinary->op s)
+    (cond [(eq? s '!) (lambda (n) (foldr * 1 (if (>= n 0) (range 1 (+ n 1)) (range n 0))))]))
+  (define/match (rpn ys acc)
+    [('() (cons a '())) a]
+    [('() _) (error "Not a valid RPN expression")]
+    [((cons y ys) acc) #:when (number? y) (rpn ys (cons y acc))]
+    [((cons y ys) (cons a acc)) #:when (symbol-urinary-op? y)
+     (rpn ys (cons ((symbol-urinary->op y) a) acc))]
+    [((cons y ys) (cons a1 (cons a2 acc))) #:when (symbol? y)
+     (rpn ys (cons ((symbol->operator y) a2 a1) acc))])
+  (rpn xs '()))
