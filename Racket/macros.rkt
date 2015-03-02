@@ -42,3 +42,16 @@
 (define-syntax (mylet2 stx)
   (syntax-parse stx
     [(_ ((var:id rhs:expr) ...) body ...+) #'((lambda (var ...) body ...) rhs ...)]))
+
+(define-syntax (mycond stx)
+  (syntax-parse stx #:datum-literals (else)
+    [(_) #'(void)]
+    [(_ (else en:expr)) #'en]
+    [(_ (p e:expr) (p1 e1:expr) ...) #'(if p e (mycond (p1 e1) ...))]))
+
+;; (module+ test
+;;   (test-suite "mycond macro"
+;;     (test-case "mycond basecase"
+;;                (check-true (void? (mycond)) "mycond when called with no arguments should return void")
+;;                (check-eq (mycond [else 'val]) 'val ""))
+;;     (test-case "mycond else")))

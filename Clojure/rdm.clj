@@ -4,7 +4,7 @@
 
 (map (fn [x] (* x x)) '(0 1 2 3 4 5))
 
-;; Example factorial function with accumulator (tail call)
+;; Example factorial function with accumulator (aridity overloading)
 (defn factorial
   ([n]
      (factorial n 1))

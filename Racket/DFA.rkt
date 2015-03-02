@@ -43,12 +43,16 @@
     #:description "dfa state transition"
     (pattern (in (~optional ->) out:id)))
 
-  (define-syntax-class state
+  (define-splicing-syntax-class state
     #:description "dfa state"
-    (pattern (name:id (~optional (~seq (~and #:end end?))) trans:transition ...+)
+    (pattern (name:id #:end trans:transition ...+)
+             #:with end? #'#t
+             #:with (in ...) #'(trans.in ...)
+             #:with (out ...) #'(trans.out ...))
+    (pattern (name:id trans:transition ...+)
+             #:with end? #'#f
              #:with (in ...) #'(trans.in ...)
              #:with (out ...) #'(trans.out ...)))
-  ;; (pattern (name:id (~seq (~and #:end end2?)) (~optional (~and #:end end?))))
   
   (syntax-parse stx
     [(_ name:id alpha:expr start:state rests:state ...)
@@ -56,59 +60,78 @@
                   (syntax->list
                    #'(start.name rests.name ...)))
                  "duplicate state names"
+     (with-syntax ([startSt (if (syntax->datum (attribute start.end?)) #'dfaStartEndState #'dfaStartState)]
+                   [restsSt (map (lambda (x) (if (syntax->datum x) #'dfaEndState #'dfaState)) (attribute rests.end?))])
      #'(define name
          (letrec ([start.name
-                   (dfaStartState
+                   (startSt
                     (match-lambda [start.in start.out] ...))]
                   [rests.name
-                   (dfaState
+                   ((if rests.end? dfaEndState dfaState) ;restsSt
                     (match-lambda [rests.in rests.out] ...))] ...)
-           (dfa 'alpha start.name '(start.name rests.name ...))))]))
+           (dfa 'alpha start.name '(start.name rests.name ...)))))]))
 
+;; Todo:
+;;  - error when 'in' pattern in the transition syntax class is not an element of alpha
+;;  - error when given no end state
+;;  - add keyword #:dead to create a dead state: (define-dfa n (0 1) (s0 #:dead))
+;;  - check to ensure all transitions goto a valid state name; fail otherwise
+;;  - check to ensure all transitions 'come from' a valid input; fail otherwise
 ;; ----------------------------------------------------------------------------
 
-(define-dfa odd-binary (0 1)
-  [s0 (0 -> s0)
-      (1 -> s1)]
-  [s1 (0 -> s0)
-      (1 -> s1)]
-  [s2 #:end
-      (0 -> s2)
-      (1 -> s1)]
-  [s3 #:dead (0 -> s3) (1 -> s3)])
-
 ;; Odd binary dfa expansion
-(define odd-dfa
-  (letrec ([s0 (dfaStartState (match-lambda [0 s0]
-                                            [1 s1]))]
-           [s1 (dfaEndState (match-lambda [0 s0]
-                                          [1 s1]))])
-    (dfa '(0 1) s0 '(s0 s1))))
+;(define odd-dfa
+;  (letrec ([s0 (dfaStartState (match-lambda [0 s0]
+;                                            [1 s1]))]
+;           [s1 (dfaEndState (match-lambda [0 s0]
+;                                          [1 s1]))])
+;    (dfa '(0 1) s0 '(s0 s1))))
 
 ;; Even binary dfa expansion
-(define even-dfa
-  (letrec ([s0 (dfaStartState (match-lambda [0 s0]
-                                               [1 s1]))]
-           [s1 (dfaState (match-lambda [0 s2]
-                                       [1 s1]))]
-           [s2 (dfaEndState (match-lambda [0 s0]
-                                          [1 s1]))])
-    (dfa '(0 1) s0 '(s0 s1 s2))))
+;(define even-dfa
+;  (letrec ([s0 (dfaStartEndState (match-lambda [0 s0]
+;                                               [1 s1]))]
+;           [s1 (dfaState (match-lambda [0 s0]
+;                                       [1 s1]))])
+;    (dfa '(0 1) s0 '(s0 s1 s2))))
 
-;; Odd binary dfa macro
-;; (define-dfa odd-dfa (0 1)
-;;      [s0 (0 -> s0)
-;;          (1 -> s1)]
-;;      [s1 end
-;;          (0 -> s0)
-;;          (1 -> s1)])
+;; Even binary DFA
+(define-dfa even-dfa (0 1)
+  [s0 (0 -> s1)
+      (1 -> s2)]
+  [s1 #:end
+      (0 -> s1)
+      (1 -> s2)]
+  [s2 (0 -> s1)
+      (1 -> s2)])
 
-;; ;; Even binary dfa macro
-;; (define-dfa even-dfa (0 1)
-;;      [s0 (0 -> s0)
-;;          (1 -> s1)]
-;;      [s1 (0 -> s2)
-;;          (1 -> s1)]
-;;      [s2 end
-;;          (0 -> s0)
-;;          (1 -> s1)])
+;; Odd binary DFA
+(define-dfa odd-dfa (0 1)
+  [s0 (0 -> s2)
+      (1 -> s1)]
+  [s1 #:end
+      (0 -> s2)
+      (1 -> s1)]
+  [s2 (0 -> s2)
+      (1 -> s1)])
+
+;; Only epsilon (empty) DFA
+;; (define (empty-dfa name xs)
+;;   (define-dfa name xs
+;;     [s0 #:end
+;;         (_ -> s1)]
+;;     [s1 #:dead]))
+
+;; ----------------------------------------------------------------------------
+;; Some simple tests
+
+(define (integer->binary-list n)
+  (define (ibl n acc)
+    (cond [(zero? n) acc]
+          [else (ibl (quotient n 2) (cons (modulo n 2) acc))]))
+  (if (zero? n) '(0) (ibl n '())))
+
+(for ([i 1000])
+  (displayln (compute-dfa even-dfa (integer->binary-list i)))
+  (displayln (compute-dfa odd-dfa  (integer->binary-list i)))
+  (newline))
