@@ -22,22 +22,29 @@
 
 (require (for-syntax syntax/parse))
 
-;; Some structures to represent a DFA
-(struct dfaState (trans))
-(struct dfaEndState dfaState ())
-(struct dfaStartState dfaState ())
-(struct dfaStartEndState dfaState ())
+;; A structure to represent a dfa state
+(struct dfaState (name trans end? dead?))
 
+;; A structure representing a dfa
 (struct dfa (alpha start states))
 
+;; A structure to represent a nfa state
+;; TODO
+
+;; A structure representing a nfa
+;; TODO
+
+;; Given a dfa and a list of inputs returns 'accept when the dfa completes in a end success
+;; state and 'reject otherwise
 (define (compute-dfa m xs)
   (define/match (run-dfa state ys)
-    [((or (dfaEndState _)
-          (dfaStartEndState _)) '()) 'accept]
+    [((dfaState _ _ #t _) '()) 'accept]
     [(_ '()) 'reject]
-    [((dfaState f) (cons z zs)) (run-dfa (f z) zs)])
+    [((dfaState _ _ #f #t) _) 'reject]
+    [((dfaState _ f _ _) (cons z zs)) (run-dfa (f z) zs)])
   (run-dfa (dfa-start m) xs))
 
+;; Macro for defining dfa structures in a syntactically clean way
 (define-syntax (define-dfa stx)
   (define-syntax-class transition
     #:description "dfa state transition"
@@ -45,6 +52,12 @@
 
   (define-splicing-syntax-class state
     #:description "dfa state"
+;;    (pattern (name:id (~or (~optional (~and #:dead deader?))
+;;                           (~optional (~and #:end ender?))) ...)
+;;             #:with dead? #'(if deader? #'#t #'#f)
+;;             #:with end? #'(if ender? #'#t #'#f)
+;;             #:with (in ...) #'(_)
+;;             #:with (out ...) #'(name))
     (pattern (name:id #:end trans:transition ...+)
              #:with end? #'#t
              #:with (in ...) #'(trans.in ...)
@@ -60,16 +73,75 @@
                   (syntax->list
                    #'(start.name rests.name ...)))
                  "duplicate state names"
-     (with-syntax ([startSt (if (syntax->datum (attribute start.end?)) #'dfaStartEndState #'dfaStartState)]
-                   [restsSt (map (lambda (x) (if (syntax->datum x) #'dfaEndState #'dfaState)) (attribute rests.end?))])
-     #'(define name
+     #`(define name
          (letrec ([start.name
-                   (startSt
-                    (match-lambda [start.in start.out] ...))]
+                   (dfaState 'start.name
+                    (match-lambda [start.in start.out] ...)
+                    start.end?
+                    #f ;start.dead?
+                    )]
                   [rests.name
-                   ((if rests.end? dfaEndState dfaState) ;restsSt
-                    (match-lambda [rests.in rests.out] ...))] ...)
-           (dfa 'alpha start.name '(start.name rests.name ...)))))]))
+                   (dfaState 'rests.name
+                    (match-lambda [rests.in rests.out] ...)
+                    rests.end?
+                    #f ;rests.dead?
+                    )] ...)
+           (dfa alpha start.name `(,start.name ,rests.name ...))))]))
+
+;; TODO: implement conversion of nfa to dfa using the powerset construction
+(define (nfa->dfa n)
+  'undefined)
+
+(define (dfa-reverse d)
+  (letrec ([states (dfa-states d)]
+           [end-states (map dfaState-name (filter dfaState-end? states))]
+           [dfa-trans-tbl (foldr (lambda (s acc)
+                                   (hash-set acc
+                                             (dfaState-name s)
+                                             (foldr (lambda (i a)
+                                                      (hash-set a i (dfaState-name ((dfaState-trans s) i))))
+                                                    (hash)
+                                                    (dfa-alpha d))))
+                                 (hash)
+                                 (dfa-states d))]
+           [gen-nfa-trans-tbl (lambda (seen tbl)
+                                (for ([(s h) (in-hash dfa-trans-tbl)])
+                                  (for ([(a t) (in-hash h)])
+                                    (set! tbl (hash-set tbl t (hash-set (hash-ref tbl t) a
+                                                               (set-add (hash-ref (hash-ref tbl t) a) s))))
+                                    (when (not (equal? s t))
+                                      (set! seen (set-add seen s)))))
+                                (for ([s (in-set (set-subtract (list->set (map dfaState-name states)) seen))])
+                                  (set! tbl (hash-remove tbl s)))
+
+                                tbl)]
+           [nfa-trans-tbl->nfa (lambda (tbl)
+                                 tbl)])
+    (nfa-trans-tbl->nfa
+     (gen-nfa-trans-tbl
+      (list->set end-states)
+      (let* ([o (foldr (lambda (i acc)
+                         (hash-set acc i (set))) (hash) (dfa-alpha d))]
+             [h (foldr (lambda (s acc)
+                         (hash-set acc (dfaState-name s) o)) (hash) states)])
+       (if (<= (length end-states) 1)
+           h
+           (hash-set h (gensym) (hash 'epsilon (list->set end-states)))))))))
+
+;; TODO
+;; (list->vector (dfa-states d))
+;; (define (dfa-reverse d)
+;;   (letrec ([alpha (dfa-alpha d)]
+;;            [start (dfa-start d)]
+;;            [ends (filter dfaState-end? (dfa-states d))]
+;;            [s0 (nfaState (match-lambda (['epsilon ends])) #f)]
+;;            [dfa-rev (match-lambda* (s n)
+;;                        [((dfaState f e d) n-prime) 'undefined])])
+;;     (nfa alpha s0 (dfa-rev ends nnnnnn))
+;;     (dfa-rev start nnnnn)))
+
+(define (minimize-dfa d)
+  (nfa->dfa (dfa-reverse (nfa->dfa (dfa-reverse d)))))
 
 ;; Todo:
 ;;  - error when 'in' pattern in the transition syntax class is not an element of alpha
@@ -80,23 +152,39 @@
 ;; ----------------------------------------------------------------------------
 
 ;; Odd binary dfa expansion
-;(define odd-dfa
-;  (letrec ([s0 (dfaStartState (match-lambda [0 s0]
-;                                            [1 s1]))]
-;           [s1 (dfaEndState (match-lambda [0 s0]
-;                                          [1 s1]))])
-;    (dfa '(0 1) s0 '(s0 s1))))
+(define odd-dfa-expansion
+  (letrec ([s0 (dfaState 's0
+                (match-lambda [0 s2]
+                              [1 s1])
+                #f #f)]
+           [s1 (dfaState 's1
+                (match-lambda [0 s2]
+                              [1 s1])
+                #t #f)]
+           [s2 (dfaState 's2
+                (match-lambda [0 s2]
+                              [1 s1])
+                #f #f)])
+    (dfa '(0 1) s0 '(s0 s1 s2))))
 
 ;; Even binary dfa expansion
-;(define even-dfa
-;  (letrec ([s0 (dfaStartEndState (match-lambda [0 s0]
-;                                               [1 s1]))]
-;           [s1 (dfaState (match-lambda [0 s0]
-;                                       [1 s1]))])
-;    (dfa '(0 1) s0 '(s0 s1 s2))))
+(define even-dfa-expansion
+  (letrec ([s0 (dfaState 's0
+                (match-lambda [0 s1]
+                              [1 s2])
+                #f #f)]
+           [s1 (dfaState 's1
+                (match-lambda [0 s1]
+                              [1 s2])
+                #t #f)]
+           [s2 (dfaState 's2
+                (match-lambda [0 s1]
+                              [1 s2])
+                #f #f)])
+    (dfa '(0 1) s0 '(s0 s1 s2))))
 
 ;; Even binary DFA
-(define-dfa even-dfa (0 1)
+(define-dfa even-dfa '(0 1)
   [s0 (0 -> s1)
       (1 -> s2)]
   [s1 #:end
@@ -106,7 +194,7 @@
       (1 -> s2)])
 
 ;; Odd binary DFA
-(define-dfa odd-dfa (0 1)
+(define-dfa odd-dfa '(0 1)
   [s0 (0 -> s2)
       (1 -> s1)]
   [s1 #:end
@@ -115,12 +203,62 @@
   [s2 (0 -> s2)
       (1 -> s1)])
 
-;; Only epsilon (empty) DFA
-;; (define (empty-dfa name xs)
-;;   (define-dfa name xs
-;;     [s0 #:end
-;;         (_ -> s1)]
-;;     [s1 #:dead]))
+(define-dfa divisible-by-four-dfa '(0 1)
+  [s0 (0 -> s3)
+      (1 -> s1)]
+  [s1 (0 -> s2)
+      (1 -> s1)]
+  [s2 (0 -> s3)
+      (1 -> s1)]
+  [s3 #:end
+      (0 -> s3)
+      (1 -> s1)])
+
+;; ----------------------------------------------------------------------------
+;; This section shows two features that would be nice to have added to the define-dfa macro
+;; Specifically:
+;;  - Add transition to dead state using #:dead keyword; dfa transition of form (in:id (~optional ->) #:dead)
+
+(define-dfa text-file-dfa (string->list "AaBbCcDdEeFfGgHhJjLlMmNnOoPpQqRrSsTtUuVvWwRrXxYyZz1234567890-=\\`!@#$%^&*()_+|~[];',./{}:\"<>?")
+  [s0 (#\. -> s1)
+      (_   -> s0)]
+  [s1 (#\t -> s2)
+      (#\. -> s1)
+      (_   -> s0)]
+  [s2 (#\x -> s3)
+      (_   -> s0)]
+  [s3 (#\t -> s4)
+      (#\. -> s1)
+      (_   -> s0)]
+  [s4 #:end
+      (#\. -> s1)
+      (_   -> s0)])
+
+;; (define-dfa text-file-dfa (#\A #\a #\B #\b #\C #\c #\D #\d #\E #\e #\F #\f #\G #\g #\H #\h #\I #\i #\J #\j #\K #\k #\L #\l #\M #\m #\N #\n #\O #\o #\P #\p #\Q #\q #\R #\r #\S #\s #\T #\t #\U #\u #\V #\v #\W #\w #\X #\x #\Y #\y #\Z #\z #\0 #\1 #\2 #\3 #\4 #\5 #\6 #\7 #\8 #\9)
+;;   [s0 (#\. -> s1)
+;;       (_   -> s0)]
+;;   [s1 (#\t -> s2)
+;;       (_   -> #:dead)]
+;;   [s2 (#\x -> s3)
+;;       (_   -> #:dead)]
+;;   [s3 (#\t -> s4)
+;;       (_   -> #:dead)]
+;;   [s4 #:end
+;;       (_   -> #:dead)])
+
+;; (define-dfa empty-dfa ()
+;;   [s0 #:end
+;;         (_ -> dead)]
+;;   [dead (_ -> dead)])
+
+;; (define-dfa empty-dfa ()
+;;   [s0 #:end (_ -> #:dead)])
+
+;; (define-dfa empty-dfa ()
+;;   [s0 #:dead #:end])
+
+;;(define-dfa binary-empty-dfa (0 1)
+;;  [s0 #:dead #:end])
 
 ;; ----------------------------------------------------------------------------
 ;; Some simple tests

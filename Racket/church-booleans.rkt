@@ -32,7 +32,7 @@
 (define (not a)
   (lambda (x)
     (lambda (y)
-      (((a) y) x))))
+      ((a y) x))))
 
 (define (and-op a b)
   (let ([evaled-a (a)])

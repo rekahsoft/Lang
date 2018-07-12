@@ -17,6 +17,8 @@
 # Author: Collin J. Doering <rekahsoft@gmail.com>
 # Date: Jul  7, 2011def factorial (n):
 
+import os
+
 # Only works for python 2.6.x since in python 3 print is a function
 def factorial (n):
     if n < 0:
@@ -28,4 +30,3 @@ def factorial (n):
         for i in range (2, n):
             ret *= i
         return ret
-

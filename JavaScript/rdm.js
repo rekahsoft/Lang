@@ -48,6 +48,7 @@ var church = (function () {
     // ------------------------------
 
     function make_bool (b) {
+        // b ? return t : return f
         if (b) {
             return t;
         } else {
@@ -331,7 +332,7 @@ matrix_test(function (a, b) {
     return a + b;
 }, function (a, b) {
     return church.nat.toNative(church.nat.add(church.nat.make(a))(church.nat.make(b)));
-}, "Test church addition");
+}, "Church addition");
 
 // matrix_test(function (a, b) {
 //     return a - b;
@@ -343,14 +344,14 @@ matrix_test(function (a, b) {
     return a * b;
 }, function (a, b) {
     return church.nat.toNative(church.nat.mult(church.nat.make(a))(church.nat.make(b)));
-}, "Test church multiplication");
+}, "Church multiplication");
 
-// very slow for some reason? (not that this implementation will ever be)
+// very slow for some reason? (not that this implementation will ever be fast)
 matrix_test(function (a, b) {
     return Math.pow(a, b);
 }, function (a, b) {
     return church.nat.toNative(church.nat.expt(church.nat.make(a))(church.nat.make(b)));
-}, "Test church exponentiation", 7);
+}, "Church exponentiation", 7);
 
 
 // -------------------------------------------------------
